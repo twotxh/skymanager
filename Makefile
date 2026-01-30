@@ -46,7 +46,7 @@ BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
-ROMFS	:=	switch/skymanager
+ROMFS	:=	config
 
 #---------------------------------------------------------------------------------
 # options for code generation

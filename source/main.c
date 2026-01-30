@@ -4,40 +4,12 @@
 #include <dirent.h>
 #include <switch.h>
 #include "../include/ini.h"
+#include "../include/mod.h"
+#include "../include/main.h"
 
-#define MAX_MODS 256
-#define MAX_PATH 512
-#define MAX_FILENAME 128
-#define CONFIG_INI_PATH "/switch/skymanager/config.ini"
+#define CONFIG_INI_PATH "/config/skymanager/config.ini"
 
 // Settings structure
-typedef struct
-{
-    // char MODS_FOLDER[MAX_PATH];
-    char SKYRIM_CCC_PATH[MAX_PATH];
-    char ATMOSPHERE_LAYEREDFS[MAX_PATH];
-    // char TITLE_ID[MAX_PATH];
-    bool IGNORE_INVALID_FILES;
-    bool HIDE_CC_CONTENT;
-} Settings;
-
-typedef struct
-{
-    char name[MAX_FILENAME];
-    char path[MAX_PATH];
-    bool enabled;
-    bool isESM;
-    bool isESP;
-    bool isESL;
-} Mod;
-
-typedef struct
-{
-    Mod mods[MAX_MODS];
-    int modCount;
-    int selectedIndex;
-    int scrollOffset;
-} ModManager;
 
 // Global instances
 Settings settings;
@@ -45,48 +17,21 @@ ModManager manager = {0};
 PadState pad;
 bool running = true;
 
-// Function prototypes
-void initDefaultSettings();
-void loadSettings();
-void scanForMods();
-void loadCCCFile();
-void saveCCCFile();
-void toggleMod(int index);
-void drawUI();
-void handleInput();
-bool isModInCCC(const char *modName);
-void initializeDirectories();
-
-// bool parser
-bool parse_bool(const char *str)
+int file_exists(const char *filename)
 {
-    if (str == NULL)
+    FILE *file;
+    /* Try to open the file in read mode ("r") */
+    if ((file = fopen(filename, "r")) != NULL)
     {
-        return false;
+        /* The file was successfully opened, so it exists and is readable */
+        fclose(file); // Close the file immediately
+        return 1;     // Return true (exists)
     }
-
-    // Case-insensitive comparison for "true" and "false"
-    if (strcasecmp(str, "true") == 0)
+    else
     {
-        return true;
+        /* fopen returned NULL, indicating the file doesn't exist or is inaccessible */
+        return 0; // Return false (does not exist/inaccessible)
     }
-    if (strcasecmp(str, "false") == 0)
-    {
-        return false;
-    }
-
-    // Check for numeric values
-    if (strcmp(str, "1") == 0)
-    {
-        return true;
-    }
-    if (strcmp(str, "0") == 0)
-    {
-        return false;
-    }
-
-    // Default to false for any other input (or define other logic)
-    return false;
 }
 
 // INI handler function
@@ -133,12 +78,12 @@ void initDefaultSettings()
     strncpy(settings.SKYRIM_CCC_PATH, "/atmosphere/contents/01000A10041EA000/romfs/Data/Skyrim.ccc", MAX_PATH - 1);
     strncpy(settings.ATMOSPHERE_LAYEREDFS, "/atmosphere/contents/01000A10041EA000/romfs/Data", MAX_PATH - 1);
     settings.IGNORE_INVALID_FILES = false;
-    settings.HIDE_CC_CONTENT = true;
+    settings.HIDE_CC_CONTENT = false;
 }
 
 void loadSettings()
 {
-    const char *config_file = "/switch/skymanager/config.ini";
+    const char *config_file = CONFIG_INI_PATH;
 
     // Initialize with defaults first
     initDefaultSettings();
@@ -148,14 +93,15 @@ void loadSettings()
     {
         // Config file doesn't exist or has errors - use defaults
         // Silently continue with defaults
+        perror("Could not load config.ini, using default settings.\n");
     }
 }
 
 void initializeDirectories()
 {
     // Create necessary directories based on settings
-    mkdir("/switch", 0777);
-    mkdir("/switch/skymanager", 0777);
+    mkdir("/config", 0777);
+    mkdir("/config/skymanager", 0777);
     // mkdir(settings.MODS_FOLDER, 0777);
 
     // Create atmosphere directories
@@ -168,62 +114,48 @@ void initializeDirectories()
     FILE *fileptr;
     fileptr = fopen(CONFIG_INI_PATH, "w");
     fclose(fileptr);
-}
-
-void scanForMods()
-{
-    manager.modCount = 0;
-
-    DIR *dir = opendir(settings.ATMOSPHERE_LAYEREDFS);
-    if (!dir)
+    if (!file_exists(CONFIG_INI_PATH))
+    // if (true)
     {
-        return;
-    }
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL && manager.modCount < MAX_MODS)
-    {
-        if (entry->d_type != DT_REG)
-            continue;
-
-        size_t len = strlen(entry->d_name);
-        bool isESP = (len > 4 && strcasecmp(entry->d_name + len - 4, ".esp") == 0);
-        bool isESM = (len > 4 && strcasecmp(entry->d_name + len - 4, ".esm") == 0);
-        bool isESL = (len > 4 && strcasecmp(entry->d_name + len - 4, ".esl") == 0);
-        bool isRESOURCE = ((len > 4 && strcasecmp(entry->d_name + len - 4, ".bsa") == 0) || (len > 4 && strcasecmp(entry->d_name + len - 4, ".ini") == 0));
-        if (isESP || isESM || isESL)
+        Result rc = romfsInit();
+        if (R_FAILED(rc))
         {
-            char prefix[2];
-            memcpy(prefix, entry->d_name, 2);
-            prefix[2] = '\0';
-            // printf("entry: %s", entry->d_name);
-            // printf("Prefix: %s \n", prefix);
+            printf("Failed to mount romfs: 0x%x\n", rc);
+            abort();
+            // return;
+        }
 
-            if (settings.HIDE_CC_CONTENT && (!strcmp(prefix, "cc")))
+        char buffer[1024];
+        size_t bytes_read, bytes_written;
+        FILE *source_file = fopen("romfs:/config.ini", "r");
+        if (!source_file)
+        {
+            perror("Failed to open romfs default config\n");
+            return;
+        }
+        FILE *dest_file = fopen(CONFIG_INI_PATH, "w");
+        if (!dest_file)
+        {
+            perror("Failed to create config.ini");
+            fclose(source_file);
+            return;
+        }
+
+        while ((bytes_read = fread(buffer, 1, sizeof(buffer), source_file)) > 0)
+        {
+            bytes_written = fwrite(buffer, 1, bytes_read, dest_file);
+            if (bytes_written != bytes_read)
             {
-                // do nothing
-            }
-            else
-            {
-                Mod *mod = &manager.mods[manager.modCount];
-                strncpy(mod->name, entry->d_name, MAX_FILENAME - 1);
-                snprintf(mod->path, MAX_PATH, "%s/%s", settings.ATMOSPHERE_LAYEREDFS, entry->d_name);
-                mod->isESM = isESM;
-                mod->isESP = isESP;
-                mod->isESL = isESL;
-                mod->enabled = isModInCCC(mod->name);
-                manager.modCount++;
+                perror("Error writing to destination file");
+                fclose(source_file);
+                fclose(dest_file);
+                return;
             }
         }
-        else if ((!(isESP || isESM || isRESOURCE || isESL)) && !settings.IGNORE_INVALID_FILES)
-        {
-            printf("Invalid file found: %s", entry);
-        }
+        fclose(source_file);
+        fclose(dest_file);
     }
-
-    closedir(dir);
 }
-
 bool isModInCCC(const char *modName)
 {
     FILE *f = fopen(settings.SKYRIM_CCC_PATH, "r");
@@ -256,6 +188,7 @@ void loadCCCFile()
     {
         manager.mods[i].enabled = isModInCCC(manager.mods[i].name);
     }
+    drawUI();
 }
 
 void saveCCCFile()
@@ -278,33 +211,15 @@ void saveCCCFile()
 
     fclose(f);
 }
-
-void toggleMod(int index)
-{
-    if (index < 0 || index >= manager.modCount)
-        return;
-
-    Mod *mod = &manager.mods[index];
-    mod->enabled = !mod->enabled;
-
-    // Save changes immediately
-    saveCCCFile();
-}
-
-void enableAll()
+/*void toggleCC(void)
 {
 
-    int mods = sizeof(manager.mods);
-    printf("%d", mods);
-    for (int i = 0; i < mods; i++)
-    {
-
-        Mod *mod = &manager.mods[i];
-        mod->enabled = true;
-    }
-    printf("saving");
-    saveCCCFile();
-}
+    settings.HIDE_CC_CONTENT = !settings.HIDE_CC_CONTENT;
+    manager = scanForMods(settings, manager);
+    manager.selectedIndex = 0;
+    manager.scrollOffset = 0; // Reset manager
+    loadCCCFile();
+}*/
 
 void drawUI()
 {
@@ -312,11 +227,11 @@ void drawUI()
 
     printf("\x1b[1;1H"); // Move cursor to top
     printf("\x1b[32m");  // Green color
-    printf("                        SKYRIM SWITCH MOD MANAGER\n\n");
+    printf("                        SKYMANAGER - Skyrim Nintendo Switch Mod Manager\n\n");
 
     printf("\x1b[0m"); // Reset color
 
-    printf("\LayeredFS Folder: %s\n", settings.ATMOSPHERE_LAYEREDFS);
+    printf("LayeredFS Folder: %s\n", settings.ATMOSPHERE_LAYEREDFS);
     printf("Total mods: %d\n\n", manager.modCount);
 
     if (manager.modCount == 0)
@@ -331,7 +246,7 @@ void drawUI()
     else
     {
         printf("Controls:\n");
-        printf("  Up/Down: Select mod  |  A: Toggle mod  |  X: Enable All  |  +: Exit\n\n");
+        printf("  Up/Down: Select mod  |  A: Toggle mod  | +: Exit\n\n");
         printf("-----------------------------------------------------\n");
 
         // Display mods (with scrolling support)
@@ -375,7 +290,7 @@ void drawUI()
             }
             else
             {
-                printf("[Unknown] \x1b[0m "); // default for error
+                printf("[Unknown] \x1b[0m "); // default for other
             }
 
             // Display mod name
@@ -443,7 +358,7 @@ void handleInput()
 
         if (kDown & HidNpadButton_A)
         {
-            toggleMod(manager.selectedIndex);
+            manager = toggleMod(manager.selectedIndex, manager);
         }
     }
 
@@ -455,18 +370,20 @@ void handleInput()
             manager.selectedIndex = manager.modCount - 1;
             if (manager.selectedIndex < 0) manager.selectedIndex = 0;
         }*/
-        enableAll();
-        scanForMods();
-        loadCCCFile();
+        /* manager = enableAll(settings, manager);
+         manager = scanForMods(settings, manager);
+         loadCCCFile(); do nothing*/
     }
-}
-
-void toggleCCC(void)
-{
-
-    settings.HIDE_CC_CONTENT = !settings.HIDE_CC_CONTENT;
-    scanForMods();
-    loadCCCFile();
+    if (kDown & HidNpadButton_Y)
+    {
+        /*scanForMods();
+        loadCCCFile();
+        if (manager.selectedIndex >= manager.modCount) {
+            manager.selectedIndex = manager.modCount - 1;
+            if (manager.selectedIndex < 0) manager.selectedIndex = 0;
+        }*/
+        // toggleCC();
+    }
 }
 
 int main(int argc, char *argv[])
@@ -475,14 +392,15 @@ int main(int argc, char *argv[])
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&pad);
 
-    // Load settings from INI file
-    loadSettings();
-
     // Initialize directories based on settings
     initializeDirectories();
 
+    // Load settings from INI file
+    loadSettings();
+
     // Scan for mods and load enabled state
-    scanForMods();
+    // printf("MAIN LOOP");
+    manager = scanForMods(settings, manager);
     loadCCCFile();
 
     while (running && appletMainLoop())
