@@ -38,7 +38,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #   NACP building is skipped as well.
 #---------------------------------------------------------------------------------
 APP_TITLE  :=  Skymanager
-APP_AUTHOR := harrowingfish
+APP_AUTHOR := twotxh
 APP_VERSION := 0.0.1
 
 TARGET		:=	$(notdir $(CURDIR))
