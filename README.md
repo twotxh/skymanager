@@ -11,5 +11,7 @@ repository to /config/skymanager/config.ini and make the modifications specified
 
 ## Building
 
-You should have DevkitARM and [dirent](https://github.com/tronkko/dirent) in your development environment.
+You should have DevkitARM and [dirent](https://github.com/tronkko/dirent) in your development environment. A copy of the excellent [inih](https://github.com/benhoyt/inih) is included in the files.
+
+
 
