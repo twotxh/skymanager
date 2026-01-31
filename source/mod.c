@@ -74,7 +74,6 @@ ModManager scanForMods(Settings settings, ModManager manager)
         bool isESP = (len > 4 && strcasecmp(entry->d_name + len - 4, ".esp") == 0);
         bool isESM = (len > 4 && strcasecmp(entry->d_name + len - 4, ".esm") == 0);
         bool isESL = (len > 4 && strcasecmp(entry->d_name + len - 4, ".esl") == 0);
-        bool isRESOURCE = ((len > 4 && strcasecmp(entry->d_name + len - 4, ".bsa") == 0) || (len > 4 && strcasecmp(entry->d_name + len - 4, ".ini") == 0));
         if (isESP || isESM || isESL)
         {
             char prefix[3];
@@ -83,11 +82,12 @@ ModManager scanForMods(Settings settings, ModManager manager)
             // printf("entry: %s", entry->d_name);
             // printf("Prefix: %s \n", prefix);
 
-            if (settings.HIDE_CC_CONTENT && (!strcmp(prefix, "cc")))
+            /*if (settings.HIDE_CC_CONTENT && (!strcmp(prefix, "cc")))
             {
                 // do nothing
             }
-            else
+            else*/
+            if (true)
             {
                 Mod *mod = &manager.mods[manager.modCount];
                 strncpy(mod->name, entry->d_name, MAX_FILENAME - 1);
@@ -99,53 +99,8 @@ ModManager scanForMods(Settings settings, ModManager manager)
                 manager.modCount++;
             }
         }
-        else if ((!(isESP || isESM || isRESOURCE || isESL)) && !settings.IGNORE_INVALID_FILES)
-        {
-            // printf("Invalid file found: %s", entry);
-        }
     }
 
     closedir(dir);
-    return manager;
-}
-
-ModManager enableAll(Settings settings, ModManager manager)
-{
-
-    int mods = manager.modCount;
-    printf("%d", mods);
-    for (int i = 0; i < mods; i++)
-    {
-
-        Mod *mod = &manager.mods[i];
-        mod->enabled = true;
-    }
-    printf("saving");
-    saveCCCFile();
-    refreshModList(settings, manager);
-    return manager;
-}
-
-ModManager refreshModList(Settings settings, ModManager manager)
-{
-    // Store current selection to try to restore it after refresh
-    char selectedModName[MAX_FILENAME] = {0};
-    if (manager.modCount > 0 && manager.selectedIndex >= 0 && manager.selectedIndex < manager.modCount)
-    {
-        strncpy(selectedModName, manager.mods[manager.selectedIndex].name, MAX_FILENAME - 1);
-    }
-
-    // Rescan mods
-    manager = scanForMods(settings, manager);
-
-    // Reload enabled states from CCC file
-    loadCCCFile();
-
-    // Try to restore selection to the same mod
-    manager.selectedIndex = 0;
-    manager.scrollOffset = 0;
-
-    // Refresh the UI to show changes
-    drawUI();
     return manager;
 }

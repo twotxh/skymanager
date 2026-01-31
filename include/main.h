@@ -8,8 +8,8 @@ typedef struct
     char SKYRIM_CCC_PATH[MAX_PATH];
     char ATMOSPHERE_LAYEREDFS[MAX_PATH];
     // char TITLE_ID[MAX_PATH];
-    bool IGNORE_INVALID_FILES;
     bool HIDE_CC_CONTENT;
+    bool SKIP_INIT;
 } Settings;
 
 void initDefaultSettings();

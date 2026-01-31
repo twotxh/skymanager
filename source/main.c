@@ -8,6 +8,7 @@
 #include "../include/main.h"
 
 #define CONFIG_INI_PATH "/config/skymanager/config.ini"
+#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 
 // Settings structure
 
@@ -16,6 +17,7 @@ Settings settings;
 ModManager manager = {0};
 PadState pad;
 bool running = true;
+bool draw_bool = true;
 
 int file_exists(const char *filename)
 {
@@ -39,8 +41,6 @@ static int iniHandler(void *user, const char *section, const char *name, const c
 {
     Settings *pconfig = (Settings *)user;
 
-#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
-
     /*if (MATCH("paths", "mods_folder")) {
         strncpy(pconfig->MODS_FOLDER, value, MAX_PATH - 1);
         pconfig->MODS_FOLDER[MAX_PATH - 1] = '\0';
@@ -55,13 +55,13 @@ static int iniHandler(void *user, const char *section, const char *name, const c
         strncpy(pconfig->ATMOSPHERE_LAYEREDFS, value, MAX_PATH - 1);
         pconfig->ATMOSPHERE_LAYEREDFS[MAX_PATH - 1] = '\0';
     }
-    else if (MATCH("settings", "ignore_invalid_files"))
-    {
-        pconfig->IGNORE_INVALID_FILES = parse_bool(value);
-    }
     else if (MATCH("settings", "hide_cc_content"))
     {
         pconfig->HIDE_CC_CONTENT = parse_bool(value);
+    }
+    else if (MATCH("settings", "skip_init"))
+    {
+        pconfig->SKIP_INIT = parse_bool(value);
     }
     else
     {
@@ -77,7 +77,6 @@ void initDefaultSettings()
     // strncpy(settings.MODS_FOLDER, "/switch/skymanager/mods", MAX_PATH - 1);
     strncpy(settings.SKYRIM_CCC_PATH, "/atmosphere/contents/01000A10041EA000/romfs/Data/Skyrim.ccc", MAX_PATH - 1);
     strncpy(settings.ATMOSPHERE_LAYEREDFS, "/atmosphere/contents/01000A10041EA000/romfs/Data", MAX_PATH - 1);
-    settings.IGNORE_INVALID_FILES = false;
     settings.HIDE_CC_CONTENT = false;
 }
 
@@ -107,13 +106,12 @@ void initializeDirectories()
     // Create atmosphere directories
     mkdir("/atmosphere", 0777);
     mkdir("/atmosphere/contents", 0777);
-    mkdir("/atmosphere/contents/01000A10041EA000", 0777);
     mkdir("/atmosphere/contents/01000A10041EA000/romfs", 0777);
     mkdir(settings.ATMOSPHERE_LAYEREDFS, 0777);
 
-    FILE *fileptr;
-    fileptr = fopen(CONFIG_INI_PATH, "w");
-    fclose(fileptr);
+    // FILE *fileptr;
+    // fileptr = fopen(CONFIG_INI_PATH, "w");
+    // fclose(fileptr);
     if (!file_exists(CONFIG_INI_PATH))
     // if (true)
     {
@@ -186,7 +184,14 @@ void loadCCCFile()
     // Update enabled status for all mods
     for (int i = 0; i < manager.modCount; i++)
     {
-        manager.mods[i].enabled = isModInCCC(manager.mods[i].name);
+        if (manager.mods[i].isCC && settings.HIDE_CC_CONTENT)
+        {
+            // manager.mods[i].enabled = false;
+        }
+        else
+        {
+            manager.mods[i].enabled = isModInCCC(manager.mods[i].name);
+        }
     }
     drawUI();
 }
@@ -211,20 +216,24 @@ void saveCCCFile()
 
     fclose(f);
 }
-/*void toggleCC(void)
+void toggleCC(void) // Toggle CC is NOT functional - wip
 {
-
     settings.HIDE_CC_CONTENT = !settings.HIDE_CC_CONTENT;
+    saveCCCFile();
     manager = scanForMods(settings, manager);
     manager.selectedIndex = 0;
-    manager.scrollOffset = 0; // Reset manager
+    manager.scrollOffset = 0; // Reset indices
     loadCCCFile();
-}*/
+    printf(CONSOLE_ESC(2J));
+    draw_bool = false;
+    drawUI();
+    draw_bool = true;
+}
 
 void drawUI()
 {
-    consoleClear();
 
+    // loadCCCFile();
     printf("\x1b[1;1H"); // Move cursor to top
     printf("\x1b[32m");  // Green color
     printf("                        SKYMANAGER - Skyrim Nintendo Switch Mod Manager\n\n");
@@ -246,7 +255,7 @@ void drawUI()
     else
     {
         printf("Controls:\n");
-        printf("  Up/Down: Select mod  |  A: Toggle mod  | +: Exit\n\n");
+        printf("  Up/Down: Select mod  |  A: Toggle mod | +: Exit\n\n");
         printf("-----------------------------------------------------\n");
 
         // Display mods (with scrolling support)
@@ -258,7 +267,6 @@ void drawUI()
         for (int i = displayStart; i < displayEnd; i++)
         {
             Mod *mod = &manager.mods[i];
-
             // Highlight selected mod
             if (i == manager.selectedIndex)
             {
@@ -364,24 +372,20 @@ void handleInput()
 
     if (kDown & HidNpadButton_X)
     {
-        /*scanForMods();
-        loadCCCFile();
-        if (manager.selectedIndex >= manager.modCount) {
-            manager.selectedIndex = manager.modCount - 1;
-            if (manager.selectedIndex < 0) manager.selectedIndex = 0;
-        }*/
         /* manager = enableAll(settings, manager);
-         manager = scanForMods(settings, manager);
-         loadCCCFile(); do nothing*/
+        manager = scanForMods(settings, manager);
+        manager.selectedIndex = 0;
+        manager.scrollOffset = 0; // Reset indices
+        loadCCCFile();
+        printf(CONSOLE_ESC(2J));
+        draw_bool = false;
+        drawUI();
+        draw_bool = true;
+        */
     }
     if (kDown & HidNpadButton_Y)
     {
-        /*scanForMods();
-        loadCCCFile();
-        if (manager.selectedIndex >= manager.modCount) {
-            manager.selectedIndex = manager.modCount - 1;
-            if (manager.selectedIndex < 0) manager.selectedIndex = 0;
-        }*/
+
         // toggleCC();
     }
 }
@@ -392,23 +396,26 @@ int main(int argc, char *argv[])
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&pad);
 
-    // Initialize directories based on settings
-    initializeDirectories();
-
     // Load settings from INI file
     loadSettings();
 
+    // Initialize directories based on settings if skip_init = false
+    if (!settings.SKIP_INIT)
+    {
+        initializeDirectories();
+    }
     // Scan for mods and load enabled state
-    // printf("MAIN LOOP");
     manager = scanForMods(settings, manager);
     loadCCCFile();
 
     while (running && appletMainLoop())
     {
-        drawUI();
+        if (draw_bool)
+        {
+            drawUI();
+        }
         handleInput();
     }
-
     consoleExit(NULL);
     return 0;
 }

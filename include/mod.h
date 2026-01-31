@@ -14,6 +14,7 @@ typedef struct
     bool isESM;
     bool isESP;
     bool isESL;
+    bool isCC;
 } Mod;
 
 typedef struct
@@ -28,5 +29,4 @@ ModManager scanForMods(Settings settings, ModManager manager);
 bool parse_bool(const char *str);
 ModManager toggleMod(int index, ModManager manager);
 ModManager enableAll(Settings settings, ModManager manager);
-ModManager refreshModList(Settings settings, ModManager manager);
 #endif
